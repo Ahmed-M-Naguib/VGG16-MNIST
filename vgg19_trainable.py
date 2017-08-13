@@ -76,16 +76,21 @@ class Vgg19:
         elif self.trainable:
             self.relu6 = tf.nn.dropout(self.relu6, self.dropout)
 
-        self.fc7 = self.fc_layer(self.relu6, 4096, 4096, "fc7")
-        self.relu7 = tf.nn.relu(self.fc7)
-        if train_mode is not None:
-            self.relu7 = tf.cond(train_mode, lambda: tf.nn.dropout(self.relu7, self.dropout), lambda: self.relu7)
-        elif self.trainable:
-            self.relu7 = tf.nn.dropout(self.relu7, self.dropout)
+        # self.fc7 = self.fc_layer(self.relu6, 4096, 4096, "fc7")
+        # self.relu7 = tf.nn.relu(self.fc7)
+        # if train_mode is not None:
+        #     self.relu7 = tf.cond(train_mode, lambda: tf.nn.dropout(self.relu7, self.dropout), lambda: self.relu7)
+        # elif self.trainable:
+        #     self.relu7 = tf.nn.dropout(self.relu7, self.dropout)
+        #
+        # self.fc8 = self.fc_layer(self.relu7, 4096, 1000, "fc8")
+        # self.relu8 = tf.nn.relu(self.fc8)
+        self.fc9 = self.fc_layer(self.relu6, 4096, 2, "fc9")
 
-        self.fc8 = self.fc_layer(self.relu7, 4096, 1000, "fc8")
+        self.prob = tf.nn.softmax(self.fc9, name="prob")
 
-        self.prob = tf.nn.softmax(self.fc8, name="prob")
+        self.fc10 = self.fc_layer(self.prob, 2, 2, "fc10")
+        self.clusters = tf.sigmoid(self.fc10) > 0.5
 
         self.data_dict = None
 

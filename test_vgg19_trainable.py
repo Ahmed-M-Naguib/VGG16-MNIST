@@ -7,7 +7,7 @@ import tensorflow as tf
 import vgg19_trainable as vgg19
 import utils
 
-img1 = utils.load_image("./test_data/tiger.jpeg")
+img1 = utils.load_image("./test_data/a (1).jpeg")
 img1_true_result = [1 if i == 292 else 0 for i in range(1000)]  # 1-hot result for tiger
 
 batch1 = img1.reshape((1, 224, 224, 3))
@@ -28,7 +28,7 @@ with tf.device('/cpu:0'):
     sess.run(tf.global_variables_initializer())
 
     # test classification
-    prob = sess.run(vgg.prob, feed_dict={images: batch1, train_mode: False})
+    prob = sess.run(vgg.prob, feed_dict={images: batch1, train_mode: True})
     utils.print_prob(prob[0], './synset.txt')
 
     # simple 1-step training
