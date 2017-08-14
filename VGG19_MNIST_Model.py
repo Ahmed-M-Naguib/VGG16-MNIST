@@ -1,5 +1,4 @@
 import tensorflow as tf
-
 import numpy as np
 from functools import reduce
 
@@ -7,10 +6,6 @@ VGG_MEAN = [103.939, 116.779, 123.68]
 
 
 class Vgg19:
-    """
-    A trainable version VGG19.
-    """
-
     def __init__(self,
                  vgg19_npy_path=None,
                  dropout=0.5,
@@ -18,7 +13,9 @@ class Vgg19:
                  lr_vgg=0.0015,
                  beta1 = 0.5,
                  logs_dir = "logs",
-                 nClasses = 10):
+                 nClasses = 10,
+                 fixed_layers={},
+                 delete_layers={}):
         if vgg19_npy_path is not None:
             self.data_dict = np.load(vgg19_npy_path, encoding='latin1').item()
         else:
@@ -29,21 +26,14 @@ class Vgg19:
         self.beta1 = beta1
         self.lr_vgg = lr_vgg
         self.batch_size = batch_size
-        self.create_MNIST_model()
+        self.nClasses = nClasses
+        self.build(fixed_layers, delete_layers)
+        init_op = tf.global_variables_initializer()
+        self.sess = tf.Session()
+        self.sess.run(init_op)
 
-
-    def build(self, fixed_layers={}):
-        """
-        load variable from npy to build the VGG
-
-        :param rgb: rgb image [batch, height, width, 3] values scaled [0, 1]
-        :param train_mode: a bool tensor, usually a placeholder: if True, dropout will be turned on
-        """
-
-        self.MNIST_labels = tf.placeholder(tf.int32, shape=[self.batch_size], name='labels')
-        self.MNIST_inputs2D = tf.placeholder(tf.float32, shape=[self.batch_size, 28 * 28], name='input2D')
-
-        self.labels = tf.placeholder(tf.int32, shape=[self.batch_size, nClasses], name='labels')
+    def build(self, fixed_layers={}, delete_layers={}):
+        self.labels = tf.placeholder(tf.int32, shape=[self.batch_size, self.nClasses], name='labels')
         self.inputs2D = tf.placeholder(tf.float32, shape=[self.batch_size, 224, 224, 3], name='input2D')
 
         rgb_scaled = self.inputs2D * 255.0
@@ -91,7 +81,7 @@ class Vgg19:
         if(not "fc6" in fixed_layers):
             self.relu6 = tf.nn.dropout(self.relu6, self.dropout)
 
-        self.fc7 = self.fc_layer(self.relu6, 4096, 4096, not "fc7", "fc7" in fixed_layers)
+        self.fc7 = self.fc_layer(self.relu6, 4096, 4096, "fc7", not "fc7" in fixed_layers)
         self.relu7 = tf.nn.relu(self.fc7)
         if (not "fc7" in fixed_layers):
             self.relu7 = tf.nn.dropout(self.relu7, self.dropout)
@@ -101,15 +91,47 @@ class Vgg19:
         if (not "fc8" in fixed_layers):
             self.relu8 = tf.nn.dropout(self.relu8, self.dropout)
 
-        self.fc9 = self.fc_layer(self.relu8, 1000, nClasses, "fc9", not "fc9" in fixed_layers)
+        self.fc9 = self.fc_layer(self.relu8, 1000, self.nClasses, "fc9", not "fc9" in fixed_layers)
         self.prob = tf.nn.softmax(self.fc9, name="prob")
-        self.vgg_loss = tf.reduce_sum((self.prob - self.datalabel) ** 2)
-        self.vgg_loss_sum = tf.summary.scalar("vgg_loss", self.vgg_loss)
 
         self.data_dict = None
 
 
+    def convert_MNIST_labels(self, labels_MNIST):
+        labels=[]
+        return labels
+    def convert_MNIST_images(self, images_MNIST):
+        images=[]
+        return images
 
+    def test(self, images):
+        return self.sess.run(self.prob, feed_dict={self.inputs2D: images})
+    def train(self, images, labels, epochs=500):
+        saver = tf.train.Saver()
+        self.vgg_loss = tf.reduce_sum((self.prob - self.labels) ** 2)
+        self.vgg_optim = tf.train.AdamOptimizer(self.lr_vgg, beta1=self.beta1).minimize(self.vgg_loss)
+        self.vgg_loss_sum = tf.summary.scalar("vgg_loss", self.vgg_loss)
+        self.data_size = images.get_shape().as_list()[0,]
+        self.train_writer = tf.summary.FileWriter("./logs", graph_def=self.sess.graph_def)
+        step = 0
+        for epoch in range (epochs):
+            print('epoch: %d' % epoch)
+            batch_idxes = self.data_size// self.batch_size
+            for batch_idxs in range (batch_idxes):
+                step =step +1
+                batch_2D = images[batch_idxs*self.batch_size:batch_idxs*self.batch_size+self.batch_size]
+                labels   = labels[batch_idxs * self.batch_size:batch_idxs * self.batch_size + self.batch_size]
+                _, loss = self.sess.run([self.vgg_optim, self.vgg_loss_sum], feed_dict={self.inputs2D: batch_2D, self.labels: labels})
+                #if batch_idxs == 0:
+                #    sample,g_loss = sess.run([self.prob,self.vgg_loss],feed_dict={self.inputs2D: batch_2D, self.labels: labels})
+                #    print('output_onelayer',sample)
+                self.train_writer.add_summary(loss,step)
+        saver.save(self.sess, "save/model.ckpt")
+        print('saved ...\n')
+    def test_MNIST(self, images):
+        self.test(self.convert_MNIST_images(images))
+    def train_MNIST(self, images, labels, epochs=500):
+        self.train(self.convert_MNIST_images(images), self.convert_MNIST_labels(labels), epochs)
 
     def avg_pool(self, bottom, name):
         return tf.nn.avg_pool(bottom, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME', name=name)
@@ -120,6 +142,7 @@ class Vgg19:
             filt, conv_biases = self.get_conv_var(3, in_channels, out_channels, name, trainable)
 
             conv = tf.nn.conv2d(bottom, filt, [1, 1, 1, 1], padding='SAME')
+
             bias = tf.nn.bias_add(conv, conv_biases)
             relu = tf.nn.relu(bias)
 
